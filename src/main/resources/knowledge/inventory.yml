@@ -1,5 +1,8 @@
-inventory:
-  items:
+schema-version: 1
+domain: inventory
+governance:
+  owner: commerce-context-maintainers
+rules:
     - id: stock-reservation
       category: lifecycle
       title: "재고 예약/확정/복구 단계 분리"
@@ -17,7 +20,7 @@ inventory:
 
     - id: available-stock-query
       category: lifecycle
-      title: "가용 재고 조회 패턴 (AI가 항상 빠뜨리는 핵심)"
+      title: "가용 재고 조회 패턴"
       summary: "재고 판매 가능 여부는 total_quantity가 아닌 (total_quantity - reserved_quantity) 기준으로 확인해야 한다"
       guidance:
         - "스키마: stock 테이블에 total_quantity(실물 재고)와 reserved_quantity(예약 중인 수량) 컬럼 분리"
@@ -35,6 +38,7 @@ inventory:
         - "결제 성공 확정 후 total_quantity와 reserved_quantity가 모두 감소하는가?"
         - "결제 실패 복구 시 reserved_quantity만 감소하는가? (total_quantity 변경 없음)"
       tags: [lifecycle, available-stock, reserved-quantity, overselling]
+      aliases: [오버셀링, 판매 초과, overselling, sellable stock]
 
     - id: concurrency-optimistic
       category: concurrency
@@ -52,6 +56,7 @@ inventory:
         - "재시도 횟수에 상한이 있는가?"
         - "동시 요청에 대한 동시성 제어가 적용됐는가? (낙관락/비관락/분산락 중 선택)"
       tags: [concurrency, optimistic-lock]
+      aliases: [lost update, 갱신 손실, version conflict, 낙관적 락]
 
     - id: concurrency-pessimistic
       category: concurrency
@@ -75,19 +80,31 @@ inventory:
     - id: concurrency-distributed
       category: concurrency
       title: "분산락 (Distributed Lock — Redis)"
-      summary: "다중 서버/MSA 환경에서 Redis를 활용해 재고 동시성을 제어하는 방식"
+      summary: "분산락은 여러 동시성 전략 중 하나이며 DB의 조건부 갱신·제약 조건과 실패 모델을 비교해 선택한다"
+      severity: high
+      applicability:
+        applies-when:
+          - "여러 프로세스가 DB 트랜잭션만으로 묶기 어려운 공유 자원 작업을 조율해야 한다."
+        does-not-apply-when:
+          - "공유 DB의 원자적 조건부 UPDATE, UNIQUE 제약 또는 행 잠금만으로 불변식을 보장할 수 있다."
+        assumptions:
+          - "Redis 장애, lease 만료, 일시 정지와 네트워크 분할을 실패 시나리오에 포함한다."
+        jurisdiction: KR
       guidance:
         - "Redisson: RLock lock = redissonClient.getLock(\"inventory:\" + productId);"
         - "lock.tryLock(3, 5, TimeUnit.SECONDS); // 대기 3초, 점유 5초"
-        - "다중 서버/MSA 환경에서 단일 JVM 락으로는 동시성 보장 불가 — 분산락 필수"
+        - "MSA라는 이유만으로 분산락을 선택하지 않는다. DB 조건부 UPDATE, 비관락, 메시지 직렬화와 비교한다"
         - "락 TTL 반드시 설정 — 서버 장애 시 자동 해제"
+        - "lease 만료 후 늦게 도착한 작업이 최신 상태를 덮지 않도록 fencing token 또는 DB version 검증을 함께 사용한다"
       avoid-patterns:
         - "락 TTL 미설정 시 서버 장애 후 락 영구 점유"
         - "Redis 장애 시 폴백 전략 미준비"
+        - "Redis 락 획득만으로 DB 불변식이 보장된다고 가정하고 조건부 갱신·제약 조건을 제거"
       checklist:
         - "분산락 사용 시 TTL이 설정됐는가?"
         - "동시 요청에 대한 동시성 제어가 적용됐는가? (낙관락/비관락/분산락 중 선택)"
       tags: [concurrency, distributed-lock, redis, msa]
+      aliases: [fencing token, 락 만료, lock expiry, redis lock]
 
     - id: idempotency
       category: idempotency
@@ -102,6 +119,7 @@ inventory:
       checklist:
         - "재고 차감 API에 멱등성 키가 적용됐는가?"
       tags: [idempotency, duplicate-request]
+      aliases: [재고 요청 멱등성, 재고 이중 차감, inventory idempotency]
 
     - id: saga-pattern
       category: consistency
@@ -122,7 +140,7 @@ inventory:
 
     - id: ai-pitfalls-checklist
       category: checklist
-      title: "재고 구현 시 AI가 자주 빠뜨리는 패턴 체크리스트"
+      title: "재고 구현 체크리스트"
       summary: "재고 구현 완료 후 반드시 점검할 체크리스트"
       checklist:
         - "재고 조회 시 (total - reserved) 기준으로 가용 재고를 확인하는가?"
@@ -135,3 +153,4 @@ inventory:
         - "MSA 구조라면 Saga 보상 트랜잭션이 정의됐는가?"
         - "재고 부족 시 적절한 예외 처리와 메시지가 있는가?"
       tags: [checklist, pitfalls, review]
+      aliases: [재고 체크리스트, 재고 점검표, inventory checklist]

@@ -1,8 +1,11 @@
-coupon:
-  items:
+schema-version: 1
+domain: coupon
+governance:
+  owner: commerce-context-maintainers
+rules:
     - id: coupon-validation
       category: validation
-      title: "쿠폰 유효성 검증 — AI가 항상 빠뜨리는 5가지"
+      title: "쿠폰 유효성 검증 핵심 항목"
       summary: "쿠폰 적용 전 유효 기간·사용 조건·중복 사용·발급 대상을 서버 측에서 모두 검증해야 한다"
       guidance:
         - "유효 기간: 발급일 기준 만료 여부 — 서버 시간 기준, 클라이언트 시간 믿지 말 것"
@@ -19,6 +22,7 @@ coupon:
         - "쿠폰 적용 대상 조건(카테고리/상품/최소금액)을 검증하는가?"
         - "쿠폰 중복 사용 방지 (상태 USED 확인)가 있는가?"
         - "쿠폰 상태 업데이트 시 동시성 제어(낙관락/CAS)가 있는가?"
+      aliases: [쿠폰 유효성, 쿠폰 사용 조건, 쿠폰 중복 사용, coupon validation]
       tags: [coupon, validation, expiry, duplicate-use, concurrency]
 
     - id: coupon-discount-calculation
@@ -44,9 +48,10 @@ coupon:
     - id: coupon-issuance
       category: issuance
       title: "선착순 쿠폰 발급 — 동시성 제어"
-      summary: "선착순 쿠폰 발급은 Redis 원자적 연산 또는 메시지 큐로 오버이슈와 이중 발급을 방지해야 한다"
+      summary: "선착순 쿠폰 발급은 재고 확인과 사용자 중복 선점을 하나의 원자적 연산으로 처리하고 DB 제약으로 최종 방어한다"
+      severity: high
       guidance:
-        - "Redis 원자적 연산 (권장): DECR coupon:stock:{couponId} → 0 미만이면 발급 거부 / SETNX coupon:issued:{couponId}:{userId} → 중복 발급 방지"
+        - "Redis 사용 시 재고 확인·감소와 사용자 중복 선점을 하나의 Lua Script로 처리한다. DECR와 SETNX를 애플리케이션에서 따로 호출하면 전체 흐름은 원자적이지 않다"
         - "DB 비관락: SELECT ... FOR UPDATE → 발급 수량 체크 + 업데이트 원자적 처리 (단: 트래픽 폭주 시 DB 커넥션 소진 위험)"
         - "메시지 큐 (비동기 발급): 발급 요청 → 큐 적재 → 워커가 순차 처리 (장점: DB 부하 분산 / 단점: 즉시 발급 피드백 불가)"
         - "이중 발급 방어: userId + couponId 조합에 UNIQUE 제약 조건 필수"
@@ -63,7 +68,7 @@ coupon:
       title: "선착순 쿠폰 발급 — Redis 선점 + DB 확정 + 보상 처리"
       summary: "Redis에서 재고와 사용자를 선점한 뒤 DB에 최종 저장하고, DB 실패 시 Lua Script로 원자적·멱등적 보상 처리를 해야 정합성을 보장할 수 있다"
       guidance:
-        - "1단계 Redis 선점 (아직 확정 아님): DECR coupon:{id}:stock → 0 미만이면 발급 거부 / SADD coupon:{id}:reserved-users {userId} → 이미 존재하면 중복 거부"
+        - "1단계 Redis 선점: 하나의 Lua Script에서 사용자 중복 확인 → 재고 확인 → 사용자 SADD → 재고 DECR을 원자적으로 처리한다"
         - "2단계 DB 저장 (@Transactional): coupon_issue INSERT, UNIQUE(coupon_id, user_id)로 최종 이중 발급 방어"
         - "3단계 성공 확정: Redis 선점 성공 + DB 저장 성공 = 발급 확정"
         - "4단계 DB 실패 시 Lua Script 보상: SREM 성공(실제로 선점 기록이 있었을 때)에만 INCR — 멱등적 보상 보장"
@@ -100,7 +105,7 @@ coupon:
 
     - id: coupon-ai-pitfalls-checklist
       category: checklist
-      title: "쿠폰/프로모션 구현 시 AI가 자주 빠뜨리는 패턴 체크리스트"
+      title: "쿠폰·프로모션 구현 체크리스트"
       summary: "쿠폰/프로모션 구현 완료 후 반드시 점검할 체크리스트"
       checklist:
         - "Redis 선점 + DB 확정 두 단계로 쿠폰 발급을 처리하는가?"
@@ -115,4 +120,5 @@ coupon:
         - "userId + couponId에 UNIQUE 제약 조건이 있는가?"
         - "부분 취소 시 쿠폰 할인 금액 역산 및 무효화 처리가 있는가?"
         - "프로모션 중복 적용 시 최대 할인 한도가 설정됐는가?"
+      aliases: [쿠폰 체크리스트, 쿠폰 점검표, coupon checklist]
       tags: [checklist, coupon, promotion, pitfalls, review]

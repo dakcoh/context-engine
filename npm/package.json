@@ -1,6 +1,6 @@
 {
   "name": "commerce-context-mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Korean domestic ecommerce Java/Spring backend knowledge MCP server for AI coding tools",
   "keywords": [
     "mcp",
@@ -29,11 +29,17 @@
   "bin": {
     "commerce-context-mcp": "bin/index.js"
   },
+  "scripts": {
+    "test": "node test/run-tests.js",
+    "test:mcp": "node test/mcp-smoke.js"
+  },
   "files": [
     "bin/",
+    "lib/",
+    "LICENSE",
     "README.md"
   ],
   "engines": {
-    "node": ">=16"
+    "node": ">=20"
   }
 }

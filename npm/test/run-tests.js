@@ -1,0 +1,120 @@
+const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { parseJavaMajor } = require("../lib/java-runtime");
+const { parseChecksum, sha256OfFile, verifyFile } = require("../lib/checksum");
+const { releaseInfo } = require("../lib/release-client");
+const { cachePaths, verifyCached, ensureJar } = require("../lib/jar-cache");
+const { serverArguments } = require("../lib/server-process");
+
+const tests = [];
+function test(name, fn) { tests.push({ name, fn }); }
+
+test("parses current and legacy Java versions", () => {
+  assert.strictEqual(parseJavaMajor('openjdk version "17.0.19" 2026-04-21 LTS'), 17);
+  assert.strictEqual(parseJavaMajor('java version "1.8.0_401"'), 8);
+  assert.strictEqual(parseJavaMajor("unknown"), null);
+});
+
+test("builds versioned release URLs", () => {
+  const info = releaseInfo({ version: "1.2.3" });
+  assert.strictEqual(info.jarName, "context-engine-1.2.3.jar");
+  assert.ok(info.checksumUrl.endsWith("context-engine-1.2.3.jar.sha256"));
+});
+
+test("parses and verifies SHA-256", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "commerce-context-test-"));
+  try {
+    const file = path.join(dir, "sample.jar");
+    fs.writeFileSync(file, "verified-content");
+    const hash = sha256OfFile(file);
+    assert.strictEqual(parseChecksum(`${hash}  sample.jar\n`), hash);
+    assert.strictEqual(verifyFile(file, hash), hash);
+    assert.throws(() => verifyFile(file, "0".repeat(64)), /Checksum mismatch/);
+    assert.throws(() => parseChecksum("bad"), /Malformed/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("accepts only a cache with matching local checksum", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "commerce-context-cache-"));
+  try {
+    const info = releaseInfo({ version: "1.2.3" });
+    const paths = cachePaths(info, dir);
+    fs.writeFileSync(paths.jarPath, "jar-content");
+    fs.writeFileSync(paths.checksumPath, `${sha256OfFile(paths.jarPath)}  ${info.jarName}\n`);
+    assert.strictEqual(verifyCached(paths).ok, true);
+    fs.writeFileSync(paths.jarPath, "tampered");
+    assert.strictEqual(verifyCached(paths).ok, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("replaces a corrupt versioned cache with a verified download", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "commerce-context-recovery-"));
+  try {
+    const info = releaseInfo({ version: "0.1.0" });
+    const paths = cachePaths(info, dir);
+    const expectedContent = "verified-jar-content";
+    const source = path.join(dir, "source.jar");
+    fs.writeFileSync(source, expectedContent);
+    const expectedHash = sha256OfFile(source);
+
+    fs.writeFileSync(paths.jarPath, "corrupt");
+    fs.writeFileSync(paths.checksumPath, `${"0".repeat(64)}  ${info.jarName}\n`);
+
+    const resolved = await ensureJar(info, {
+      cacheDir: dir,
+      fetchText: async () => `${expectedHash}  ${info.jarName}\n`,
+      download: async (_url, destination) => {
+        fs.writeFileSync(destination, expectedContent);
+      },
+    });
+
+    assert.strictEqual(resolved, paths.jarPath);
+    assert.strictEqual(fs.readFileSync(paths.jarPath, "utf8"), expectedContent);
+    assert.strictEqual(verifyCached(paths).ok, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("starts Java stdio with UTF-8 before the jar argument", () => {
+  assert.deepStrictEqual(serverArguments("server.jar", ["--example=true"]), [
+    "-Dfile.encoding=UTF-8",
+    "-jar",
+    "server.jar",
+    "--example=true",
+  ]);
+});
+
+test("ships the repository MIT license in the npm package", () => {
+  const packageRoot = path.resolve(__dirname, "..");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+  const packagedLicense = fs.readFileSync(path.join(packageRoot, "LICENSE"), "utf8");
+  const repositoryLicense = fs.readFileSync(path.resolve(packageRoot, "..", "LICENSE"), "utf8");
+
+  assert.ok(packageJson.files.includes("LICENSE"));
+  assert.strictEqual(packagedLicense.replace(/\r\n/g, "\n"), repositoryLicense.replace(/\r\n/g, "\n"));
+});
+
+(async () => {
+  let failed = 0;
+  for (const entry of tests) {
+    try {
+      await entry.fn();
+      console.log(`ok - ${entry.name}`);
+    } catch (error) {
+      failed += 1;
+      console.error(`not ok - ${entry.name}`);
+      console.error(error.stack || error);
+    }
+  }
+  if (failed > 0) {
+    process.exit(1);
+  }
+  console.log(`${tests.length} npm launcher tests passed`);
+})();

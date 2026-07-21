@@ -35,16 +35,20 @@ jobs:
 
       # validateKnowledge 는 test 에 의존한다.
       # → YAML 지식 스키마/품질 검증 + 전체 단위·통합 테스트 + MCP 도구 등록 검증을 한 번에 수행한다.
-      - name: Validate knowledge & run tests
+      - name: Validate knowledge, run tests, and build JAR
         run: |
           chmod +x gradlew
-          ./gradlew validateKnowledge --no-daemon
+          ./gradlew validateKnowledge bootJar --no-daemon
 
-      # npm 실행기 문법 검증 (구문 오류로 인한 사용자 실행 실패 방지)
+      # npm 실행기 최소 지원 버전에서 기능·패키징 검증
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Syntax-check npm launcher
-        run: node --check npm/bin/index.js
+      - name: Test npm launcher
+        working-directory: npm
+        run: |
+          npm test
+          node test/mcp-smoke.js ../build/libs/context-engine-0.1.0-SNAPSHOT.jar
+          npm pack --dry-run

@@ -1,6 +1,9 @@
 spring:
   application:
     name: context-engine
+  main:
+    banner-mode: off
+    web-application-type: none
   ai:
     mcp:
       server:
@@ -10,23 +13,12 @@ spring:
         # IDE/테스트처럼 MANIFEST가 없을 때만 0.0.0 으로 폴백한다.
         version: ${spring.application.version:0.0.0}
         type: SYNC
+        stdio: true
         # 도구 등록의 단일 기준은 config/McpToolConfig 의 ToolCallbackProvider 빈이다.
-        # 아래 목록은 그 빈과 반드시 일치해야 한다(둘 다 7개 Tool 클래스, 총 37개 @Tool).
+        # 정적 규칙마다 Tool을 만들지 않고, 통합 Tool 4개만 공개한다.
         annotation-scanner:
           tool-beans:
-            - inventoryContextTool
-            - paymentContextTool
-            - settlementContextTool
-            - couponContextTool
-            - commerceContextTool
-            - springCommerceContextTool
-            - unifiedSearchTool
+            - commerceKnowledgeTool
 
-server:
-  port: 8080
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,mappings
+logging:
+  config: classpath:logback-stdio.xml

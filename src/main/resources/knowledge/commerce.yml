@@ -1,5 +1,8 @@
-commerce:
-  items:
+schema-version: 1
+domain: commerce
+governance:
+  owner: commerce-context-maintainers
+rules:
     - id: commerce-catalog-model
       category: catalog
       title: "상품 카탈로그: Product, SKU, Offer를 분리한다"
@@ -148,6 +151,7 @@ commerce:
         - "결제 멱등성 키와 PG 거래 번호 UNIQUE 제약이 있는가?"
         - "UNCERTAIN 상태와 대사 작업이 있는가?"
         - "웹훅 서명 검증과 중복 방어가 있는가?"
+      aliases: [결제 거래 원장, 승인 취소 환불 원장, payment ledger, payment transaction]
       tags: [payment, ledger, idempotency, webhook, reconciliation, uncertain]
 
     - id: commerce-fulfillment-reverse-logistics
